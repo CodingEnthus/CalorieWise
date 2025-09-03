@@ -16,29 +16,34 @@ def load_all_food_data():
     key = food name (lowercase)
     value = kcal per gram
     """
-
-    # ✅ Path to the folder where all your CSVs are stored (inside your project)
-    folder_path = os.path.join(os.path.dirname(__file__), 'final_food_dataset')
-
-    # Loop through each file in the folder
-    for filename in os.listdir(folder_path):
+folder_path = os.path.join(os.path.dirname(__file__), 'final_food_dataset')
+for filename in os.listdir(folder_path):
         if filename.startswith('FOOD-DATA-GROUP') and filename.endswith('.csv'):
             file_path = os.path.join(folder_path, filename)
-            
-            # Open and read the CSV file
+
+            # ✅ Keep reading inside the 'with' block
             with open(file_path, newline='', encoding='utf-8') as csvfile:
                 reader = csv.DictReader(csvfile)
                 for row in reader:
                     try:
                         # Extract food name and calorie data
                         food_name = row['Food Name'].strip().lower()
-                        kcal_per_100g = float(row['Energy (kcal) / 100 g'])
+
+                        # Handle multiple possible calorie column names
+                        if 'Energy (kcal) / 100 g' in row:
+                            kcal_per_100g = float(row['Energy (kcal) / 100 g'])
+                        elif 'Caloric Value' in row:
+                            kcal_per_100g = float(row['Caloric Value'])
+                        else:
+                            continue  # skip if no matching column
 
                         # Convert to per gram
                         kcal_per_gram = kcal_per_100g / 100
                         FOOD_DATA[food_name] = kcal_per_gram
+
                     except (ValueError, KeyError):
                         continue  # Skip rows with missing or invalid data
+                    print(f"\n✅ Loaded {len(FOOD_DATA)} foods into memory.")
 
 # Function to calculate total calories for a food item
 def get_calories(food, amount):
@@ -52,16 +57,30 @@ def get_calories(food, amount):
 def calories():
     data = request.get_json()
     food = data.get('food')
-    amount = data.get('amount')  # in grams
+    amount = data.get('amount') or data.get('quantity')  # accept both
 
     if not food or not amount:
         return jsonify({'error': 'Please provide food and amount'}), 400
 
-    calories = get_calories(food, float(amount))
-    if calories is None:
-        return jsonify({'error': 'Food not found'}), 404
+    try:
+        calories = get_calories(food, float(amount))
+    except ValueError:
+        return jsonify({'error': 'Amount must be a number'}), 400
 
-    return jsonify({'calories': calories})
+    if calories is None:
+        return jsonify({'error': f'Food "{food}" not found in database'}), 404
+
+    return jsonify({'food': food, 'amount': amount, 'calories': calories})
+
+# Home route - browser friendly
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "Welcome to CalorieWise API! Use POST /calories with food + amount."})
+
+# Test route - quick check
+@app.route("/test", methods=["GET"])
+def test():
+    return jsonify({"status": "API is working ✅"})
 
 # Load data once when app starts
 load_all_food_data()
